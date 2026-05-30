@@ -1,46 +1,72 @@
-# managers/tag_manager.py
+"""
+tag_manager.py
 
-import math
+Port of TagManager.pde
+
+ArUco-TUI Client v26.1
+Processing -> Python
+"""
+
 import numpy as np
-import pygame
 
-from models.tag import Tag
-from models.tagged_object import TaggedObject
+from tag import Tag
+from tagged_object import TaggedObject
 
 from tools import (
-    img2screen,
+    PVector,
     transform_point,
+    img2screen,
     distance_point_to_plane,
+    planePoints,
+    homography,
+    homographyMatrixCalculated,
+    global_rz,
+    touchThreshold,
     is_corner
 )
 
 
 class TagManager:
 
-    def __init__(self, n, to_ids, to_offs):
+    def __init__(
+        self,
+        num_tags,
+        to_ids,
+        to_offsets
+    ):
 
         self.TAG_D = 150
         self.TO_D = 150
 
-        self.tags = [Tag(i) for i in range(n)]
+        self.tags = [
+            Tag(i)
+            for i in range(num_tags)
+        ]
 
         self.tagged_objects = []
 
         self.active_tags = []
         self.active_tos = []
 
-        for ids, offs in zip(to_ids, to_offs):
+        for ids, offsets in zip(
+            to_ids,
+            to_offsets
+        ):
+
             self.tagged_objects.append(
-                TaggedObject(ids, offs)
+                TaggedObject(
+                    ids,
+                    offsets
+                )
             )
 
-    # -----------------------------------------------------
-    # Processing set(...)
-    # -----------------------------------------------------
+    # =====================================================
+    # TAG UPDATE
+    # =====================================================
 
     def set(
         self,
-        marker_id,
+        tag_id,
         tx,
         ty,
         tz,
@@ -49,7 +75,14 @@ class TagManager:
         rz,
         corners
     ):
-        self.tags[marker_id].set(
+
+        if (
+            tag_id < 0 or
+            tag_id >= len(self.tags)
+        ):
+            return
+
+        self.tags[tag_id].set(
             tx,
             ty,
             tz,
@@ -59,15 +92,15 @@ class TagManager:
             corners
         )
 
-    # -----------------------------------------------------
-    # Rotation matrices
-    # -----------------------------------------------------
+    # =====================================================
+    # ROTATION MATRICES
+    # =====================================================
 
     @staticmethod
-    def rot_x(a):
+    def rotate_x(angle):
 
-        c = math.cos(a)
-        s = math.sin(a)
+        c = np.cos(angle)
+        s = np.sin(angle)
 
         return np.array([
             [1, 0, 0],
@@ -76,10 +109,10 @@ class TagManager:
         ])
 
     @staticmethod
-    def rot_y(a):
+    def rotate_y(angle):
 
-        c = math.cos(a)
-        s = math.sin(a)
+        c = np.cos(angle)
+        s = np.sin(angle)
 
         return np.array([
             [c, 0, s],
@@ -88,10 +121,10 @@ class TagManager:
         ])
 
     @staticmethod
-    def rot_z(a):
+    def rotate_z(angle):
 
-        c = math.cos(a)
-        s = math.sin(a)
+        c = np.cos(angle)
+        s = np.sin(angle)
 
         return np.array([
             [c, -s, 0],
@@ -99,21 +132,34 @@ class TagManager:
             [0, 0, 1]
         ])
 
-    # -----------------------------------------------------
-    # Processing update()
-    # -----------------------------------------------------
+    # =====================================================
+    # MAIN UPDATE
+    # =====================================================
 
     def update(self):
 
         self.active_tags.clear()
         self.active_tos.clear()
 
+        # ---------------------------------------------
+        # active tags
+        # ---------------------------------------------
+
         for tag in self.tags:
 
             tag.check_active()
 
             if tag.active:
-                self.active_tags.append(tag.id)
+                self.active_tags.append(
+                    tag.tag_id
+                )
+
+        # ---------------------------------------------
+        # bundles
+        # ---------------------------------------------
+
+        if not homographyMatrixCalculated:
+            return
 
         for bundle in self.tagged_objects:
 
@@ -121,7 +167,11 @@ class TagManager:
 
             for marker_id in bundle.ids:
 
-                if self.tags[marker_id].active:
+                if (
+                    marker_id < len(self.tags)
+                    and
+                    self.tags[marker_id].active
+                ):
                     active_bundle_tags.append(
                         self.tags[marker_id]
                     )
@@ -140,31 +190,27 @@ class TagManager:
                     ])
 
                     offset = bundle.get_offset_from_id(
-                        tag.id
+                        tag.tag_id
                     )
 
-                    # -------------------------
-                    # Processing:
-                    #
-                    # v = (0,0,offset.z)
-                    #
-                    # R1.rotateZ(-rz)
-                    # R1.rotateX(rx)
-                    # R1.rotateY(ry)
-                    # R1.rotateZ(rz)
-                    # -------------------------
+                    # ---------------------------------
+                    # R1
+                    # ---------------------------------
 
                     v = np.array([
-                        0.0,
-                        0.0,
+                        0,
+                        0,
                         offset.z
                     ])
 
                     R1 = (
-                        self.rot_z(-tag.rz)
-                        @ self.rot_x(tag.rx)
-                        @ self.rot_y(tag.ry)
-                        @ self.rot_z(tag.rz)
+                        self.rotate_z(-tag.rz)
+                        @
+                        self.rotate_x(tag.rx)
+                        @
+                        self.rotate_y(tag.ry)
+                        @
+                        self.rotate_z(tag.rz)
                     )
 
                     rotated_v = R1 @ v
@@ -175,26 +221,22 @@ class TagManager:
                         O[2] + rotated_v[2]
                     ])
 
-                    # -------------------------
-                    # Processing:
-                    #
-                    # w=(offset.x,offset.y,0)
-                    #
-                    # R2.rotateX(rx)
-                    # R2.rotateY(ry)
-                    # R2.rotateZ(rz)
-                    # -------------------------
+                    # ---------------------------------
+                    # R2
+                    # ---------------------------------
 
                     w = np.array([
                         offset.x,
                         offset.y,
-                        0.0
+                        0
                     ])
 
                     R2 = (
-                        self.rot_x(tag.rx)
-                        @ self.rot_y(tag.ry)
-                        @ self.rot_z(tag.rz)
+                        self.rotate_x(tag.rx)
+                        @
+                        self.rotate_y(tag.ry)
+                        @
+                        self.rotate_z(tag.rz)
                     )
 
                     rotated_w = R2 @ w
@@ -229,32 +271,35 @@ class TagManager:
 
                 bundle.set_inactive()
 
-        for i, bundle in enumerate(
+        for index, bundle in enumerate(
             self.tagged_objects
         ):
-            if bundle.active:
-                self.active_tos.append(i)
 
-    # -----------------------------------------------------
-    # Processing getActiveTOs()
-    # -----------------------------------------------------
+            if bundle.active:
+                self.active_tos.append(index)
+
+    # =====================================================
+    # GETTERS
+    # =====================================================
 
     def get_active_tos(self):
 
-        result = []
+        return [
+            self.tagged_objects[i]
+            for i in self.active_tos
+        ]
 
-        for idx in self.active_tos:
-            result.append(
-                self.tagged_objects[idx]
-            )
+    def get_active_tags(self):
 
-        return result
+        return [
+            self.tags[i]
+            for i in self.active_tags
+        ]
 
-    # -----------------------------------------------------
-    # Processing getBundle()
-    # -----------------------------------------------------
-
-    def get_bundle(self, to_id):
+    def get_bundle(
+        self,
+        to_id
+    ):
 
         for bundle in self.get_active_tos():
 
@@ -265,209 +310,40 @@ class TagManager:
 
         return None
 
-    # -----------------------------------------------------
-    # Processing getActiveTags()
-    # -----------------------------------------------------
-
-    def get_active_tags(self):
-
-        result = []
-
-        for tag_id in self.active_tags:
-            result.append(
-                self.tags[tag_id]
-            )
-
-        return result
-
-    # -----------------------------------------------------
-    # Processing displayRaw()
-    # -----------------------------------------------------
-
-    def display_raw(self, surface):
-
-        for tag in self.tags:
-
-            if not tag.active:
-                continue
-
-            for corner in tag.corners:
-
-                pygame.draw.circle(
-                    surface,
-                    (255, 255, 255),
-                    (int(corner.x), int(corner.y)),
-                    4
-                )
-
-    # -----------------------------------------------------
-    # Processing drawTagSimple()
-    # -----------------------------------------------------
-
-    def draw_tag_simple(
-        self,
-        surface,
-        marker_id,
-        loc2d,
-        angle2d,
-        diameter,
-        color_rgb=(100, 100, 100)
-    ):
-
-        x, y = loc2d
-
-        radius = diameter / 2
-
-        if radius < 1:
-            return
-
-        pygame.draw.circle(
-            surface,
-            color_rgb,
-            (int(x), int(y)),
-            int(radius)
-        )
-
-        x2 = x + radius * math.cos(angle2d)
-        y2 = y + radius * math.sin(angle2d)
-
-        pygame.draw.line(
-            surface,
-            (0, 0, 0),
-            (int(x), int(y)),
-            (int(x2), int(y2)),
-            3
-        )
-
-    # -----------------------------------------------------
-    # Processing drawTagCustom()
-    # -----------------------------------------------------
-
-    def draw_tag_custom(
-        self,
-        surface,
-        marker_id,
-        loc2d,
-        angle2d
-    ):
-
-        x, y = loc2d
-
-        radius = 50
-
-        pygame.draw.circle(
-            surface,
-            (52, 52, 52),
-            (int(x), int(y)),
-            radius
-        )
-
-        px = x + radius * math.cos(angle2d)
-        py = y + radius * math.sin(angle2d)
-
-        pygame.draw.circle(
-            surface,
-            (255, 255, 255),
-            (int(px), int(py)),
-            radius // 4
-        )
-
-    # -----------------------------------------------------
-    # Processing drawActiveTags()
-    # -----------------------------------------------------
-
-    def draw_active_tags(
-        self,
-        surface,
-        homography,
-        plane_points,
-        touch_threshold,
-        global_rz
-    ):
-
-        for tag in self.get_active_tags():
-
-            if is_corner(tag.id):
-                continue
-
-            p = transform_point(
-                (tag.tx, tag.ty, tag.tz),
-                homography
-            )
-
-            loc2d = img2screen(p)
-
-            self.draw_tag_simple(
-                surface,
-                tag.id,
-                loc2d,
-                tag.rz - global_rz,
-                self.TAG_D
-            )
-
-    # -----------------------------------------------------
-    # Processing drawActiveTOs()
-    # -----------------------------------------------------
+    # =====================================================
+    # DEBUG DRAW
+    # =====================================================
 
     def draw_active_tos(
         self,
-        surface,
-        homography,
-        plane_points,
-        touch_threshold,
-        global_rz
+        surface=None
     ):
+        """
+        Заглушка.
 
-        for bundle in self.get_active_tos():
+        Аналог drawActiveTOs().
 
-            p = transform_point(
-                (bundle.tx, bundle.ty, bundle.tz),
-                homography
-            )
+        Реалізацію pygame краще
+        винести окремо після завершення
+        всіх математичних модулів.
+        """
+        pass
 
-            loc2d = img2screen(p)
-
-            self.draw_tag_simple(
-                surface,
-                bundle.ids[0],
-                loc2d,
-                bundle.rz - global_rz,
-                self.TO_D,
-                (0, 127, 255)
-            )
-
-    # -----------------------------------------------------
-    # Processing drawCustomActiveBundles()
-    # -----------------------------------------------------
-
-    def draw_custom_active_bundles(
+    def draw_active_tags(
         self,
-        surface,
-        homography,
-        plane_points,
-        touch_threshold,
-        global_rz
+        surface=None
     ):
+        """
+        Аналог drawActiveTags().
+        """
+        pass
 
-        for bundle in self.get_active_tos():
-
-            distance = distance_point_to_plane(
-                (bundle.tx, bundle.ty, bundle.tz),
-                plane_points
-            )
-
-            if distance < touch_threshold:
-
-                p = transform_point(
-                    (bundle.tx, bundle.ty, bundle.tz),
-                    homography
-                )
-
-                loc2d = img2screen(p)
-
-                self.draw_tag_custom(
-                    surface,
-                    bundle.ids[0],
-                    loc2d,
-                    bundle.rz - global_rz
-                )
+    def display_raw(
+        self,
+        surface=None
+    ):
+        """
+        Аналог displayRaw().
+        """
+        pass
+        

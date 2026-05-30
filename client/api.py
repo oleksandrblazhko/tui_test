@@ -7,25 +7,18 @@ ArUco-TUI Client v26.1
 Processing -> Python
 """
 
-from tools import (
-    PVector,
-    transform_point,
-    img2screen,
-    global_rz,
-    homographyMatrixCalculated
-)
-
+from tools import PVector
+import tools
 
 # ============================================================
-# Debug flags
+# Debug
 # ============================================================
 
 serialDebug = False
 
-
 # ============================================================
 # Global references
-# Будуть встановлені з main.py
+# встановлюються з main.py
 # ============================================================
 
 tm = None
@@ -34,7 +27,8 @@ DOlist = None
 
 def initialize_api(tag_manager, data_objects):
     """
-    Викликається один раз з main.py
+    Викликається один раз після створення TagManager
+    та DataObjects.
     """
 
     global tm
@@ -45,60 +39,88 @@ def initialize_api(tag_manager, data_objects):
 
 
 # ============================================================
+# Helpers
+# ============================================================
+
+def _get_screen_position(x, y, z):
+    """
+    Processing:
+    img2screen(
+        transformPoint(
+            new PVector(x,y,z),
+            homography
+        )
+    )
+    """
+
+    world = PVector(x, y, z)
+
+    transformed = tools.transform_point(
+        world,
+        tools.homography
+    )
+
+    return tools.img2screen(transformed)
+
+
+# ============================================================
 # TAG EVENTS
 # ============================================================
 
-def Tag_Present3D(
-        marker_id,
-        tx,
-        ty,
-        tz,
-        rx,
-        ry,
-        rz):
+def tag_present_3d(
+    marker_id,
+    tx,
+    ty,
+    tz,
+    rx,
+    ry,
+    rz
+):
 
     if serialDebug and marker_id != 0:
 
         print(
-            f"+ Tag {marker_id}: "
-            f"loc=({tx:.4f},{ty:.4f},{tz:.4f}) "
-            f"angle=({rx:.4f},{ry:.4f},{rz:.4f})"
+            f"+ Tag: {marker_id} "
+            f"loc=({tx:.4f}, {ty:.4f}, {tz:.4f}) "
+            f"angle=({rx:.4f}, {ry:.4f}, {rz:.4f})"
         )
 
 
-def Tag_Absent3D(
-        marker_id,
-        tx,
-        ty,
-        tz,
-        rx,
-        ry,
-        rz):
+def tag_absent_3d(
+    marker_id,
+    tx,
+    ty,
+    tz,
+    rx,
+    ry,
+    rz
+):
 
     if serialDebug and marker_id != 0:
 
         print(
-            f"- Tag {marker_id}: "
-            f"loc=({tx:.4f},{ty:.4f},{tz:.4f}) "
-            f"angle=({rx:.4f},{ry:.4f},{rz:.4f})"
+            f"- Tag: {marker_id} "
+            f"loc=({tx:.4f}, {ty:.4f}, {tz:.4f}) "
+            f"angle=({rx:.4f}, {ry:.4f}, {rz:.4f})"
         )
 
 
-def Tag_Update3D(
-        marker_id,
-        tx,
-        ty,
-        tz,
-        rx,
-        ry,
-        rz):
+def tag_update_3d(
+    marker_id,
+    tx,
+    ty,
+    tz,
+    rx,
+    ry,
+    rz
+):
 
     if serialDebug and marker_id != 0:
 
         print(
-            f"% Tag {marker_id}: "
-            f"loc=({tx:.4f},{ty:.4f},{tz:.4f}) "
-            f"angle=({rx:.4f},{ry:.4f},{rz:.4f})"
+            f"% Tag: {marker_id} "
+            f"loc=({tx:.4f}, {ty:.4f}, {tz:.4f}) "
+            f"angle=({rx:.4f}, {ry:.4f}, {rz:.4f})"
         )
 
 
@@ -106,39 +128,43 @@ def Tag_Update3D(
 # TAGGED OBJECT EVENTS
 # ============================================================
 
-def TO_Present2D(
-        object_id,
-        x,
-        y,
-        z,
-        rz):
+def to_present_2d(
+    object_id,
+    x,
+    y,
+    z,
+    rz
+):
 
-    if not homographyMatrixCalculated:
+    if not tools.homographyMatrixCalculated:
         return
 
-    if is_corner(object_id):
+    if tools.is_corner(object_id):
         return
 
-    t = img2screen(
-        transform_point(
-            PVector(x, y, z)
-        )
-    )
+    if tm is None:
+        return
+
+    if DOlist is None:
+        return
+
+    t = _get_screen_position(x, y, z)
 
     if serialDebug:
 
         print(
-            f"+ Bundle {object_id}: "
-            f"loc=({t.x:.1f},{t.y:.1f}) "
-            f"angle={rz:.3f}"
+            f"+ Bundle: {object_id} "
+            f"loc=({t.x:.1f}, {t.y:.1f}) "
+            f"angle={rz:.4f}"
         )
 
     for obj in DOlist:
 
         if obj.check_hit(
-                t.x,
-                t.y,
-                tm.TO_D / 2):
+            t.x,
+            t.y,
+            tm.TO_D / 2
+        ):
 
             if not obj.has_ctrl_id(object_id):
 
@@ -149,102 +175,97 @@ def TO_Present2D(
                 )
 
 
-def TO_Absent2D(
-        object_id,
-        x,
-        y,
-        z,
-        rz):
+def to_absent_2d(
+    object_id,
+    x,
+    y,
+    z,
+    rz
+):
 
-    if not homographyMatrixCalculated:
+    if not tools.homographyMatrixCalculated:
         return
 
-    if is_corner(object_id):
+    if tools.is_corner(object_id):
         return
 
-    t = img2screen(
-        transform_point(
-            PVector(x, y, z)
-        )
-    )
+    if DOlist is None:
+        return
+
+    t = _get_screen_position(x, y, z)
 
     if serialDebug:
 
         print(
-            f"- Bundle {object_id}: "
-            f"loc=({t.x:.1f},{t.y:.1f}) "
-            f"angle={rz:.3f}"
+            f"- Bundle: {object_id} "
+            f"loc=({t.x:.1f}, {t.y:.1f}) "
+            f"angle={rz:.4f}"
         )
 
     for obj in DOlist:
 
         if obj.has_ctrl_id(object_id):
 
-            obj.set_previous_rotation(
-                obj.rotation
-            )
+            if hasattr(obj, "set_previous_rotation"):
+                obj.set_previous_rotation(
+                    obj.rotation
+                )
 
             obj.remove_ctrl_id(
                 object_id
             )
 
 
-def TO_Update2D(
-        object_id,
-        x,
-        y,
-        z,
-        rz):
+def to_update_2d(
+    object_id,
+    x,
+    y,
+    z,
+    rz
+):
 
-    if not homographyMatrixCalculated:
+    if not tools.homographyMatrixCalculated:
         return
 
-    if is_corner(object_id):
+    if tools.is_corner(object_id):
         return
 
-    t = img2screen(
-        transform_point(
-            PVector(x, y, z)
-        )
-    )
+    if DOlist is None:
+        return
+
+    t = _get_screen_position(x, y, z)
 
     if serialDebug:
 
         print(
-            f"% Bundle {object_id}: "
-            f"loc=({t.x:.1f},{t.y:.1f}) "
-            f"angle={rz:.3f}"
+            f"% Bundle: {object_id} "
+            f"loc=({t.x:.1f}, {t.y:.1f}) "
+            f"angle={rz:.4f}"
         )
 
-    for obj in DOlist:
+    #
+    # В оригінальному Processing:
+    #
+    # if (obj.hasCtrlID(id)) {
+    #
+    # }
+    #
+    # Блок порожній.
+    #
+    # Тому навмисно нічого не робимо.
+    #
 
-        if obj.has_ctrl_id(object_id):
-
-            #
-            # Оригінальний Processing код:
-            #
-            # if (obj.hasCtrlID(id)) {
-            #
-            # }
-            #
-            # тобто порожній блок.
-            #
-            # Тому тут також нічого не робимо.
-            #
-
-            pass
+    return
 
 
 # ============================================================
-# Helpers
+# Backward compatibility
 # ============================================================
 
-def is_corner(marker_id):
-    """
-    Аналог tools.isCorner()
+Tag_Present3D = tag_present_3d
+Tag_Update3D = tag_update_3d
+Tag_Absent3D = tag_absent_3d
 
-    Поки що кути жорстко задані,
-    надалі можна винести у config.py
-    """
-
-    return marker_id in (1, 2, 3)
+TO_Present2D = to_present_2d
+TO_Update2D = to_update_2d
+TO_Absent2D = to_absent_2d

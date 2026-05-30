@@ -1,26 +1,29 @@
+# models/tagged_object.py
+
 import math
 import time
 
-import numpy as np
+from tools import (
+    PVector,
+    planePoints,
+    touchThreshold,
+    distance_point_to_plane,
+    transform_point,
+    img2screen,
+)
 
 
 class TaggedObject:
 
-    def __init__(
-        self,
-        to_ids,
-        offsets
-    ):
+    def __init__(self, to_ids, offsets):
 
-        self.ttl = 100
+        self.TTL = 100
 
         self.active = False
-
-        self.timestamp = 0
+        self.ts = 0
 
         self.ids = list(to_ids)
-
-        self.offsets = list(offsets)
+        self.offs = list(offsets)
 
         self.tx = 0.0
         self.ty = 0.0
@@ -34,9 +37,17 @@ class TaggedObject:
         self.p_ry = 0.0
         self.p_rz = 0.0
 
+    # --------------------------------------------------
+    # Processing: getTO_ID()
+    # --------------------------------------------------
+
     def get_to_id(self):
 
         return self.ids[0]
+
+    # --------------------------------------------------
+    # Processing: unwrapAngle()
+    # --------------------------------------------------
 
     def unwrap_angle(
         self,
@@ -44,33 +55,44 @@ class TaggedObject:
         previous_angle
     ):
 
-        delta = current_angle - previous_angle
+        delta_angle = current_angle - previous_angle
 
-        if delta > math.pi:
-            current_angle -= 2 * math.pi
+        if delta_angle > math.pi:
+            current_angle -= 2.0 * math.pi
 
-        elif delta < -math.pi:
-            current_angle += 2 * math.pi
+        elif delta_angle < -math.pi:
+            current_angle += 2.0 * math.pi
 
         return current_angle
 
+    # --------------------------------------------------
+    # Processing: setInactive()
+    # --------------------------------------------------
+
     def set_inactive(self):
 
-        now = time.time() * 1000
+        now = int(time.time() * 1000)
 
-        if self.active and (now - self.timestamp) > self.ttl:
+        if self.active and (now - self.ts) > self.TTL:
 
             self.active = False
 
-            from api import to_absent_2d
+            try:
+                from api import to_absent_2d
 
-            to_absent_2d(
-                self.get_to_id(),
-                self.tx,
-                self.ty,
-                self.tz,
-                self.rz
-            )
+                to_absent_2d(
+                    self.get_to_id(),
+                    self.tx,
+                    self.ty,
+                    self.tz,
+                    self.rz
+                )
+            except Exception:
+                pass
+
+    # --------------------------------------------------
+    # Processing: set(...)
+    # --------------------------------------------------
 
     def set(
         self,
@@ -90,59 +112,111 @@ class TaggedObject:
         self.ry = self.unwrap_angle(ry, self.p_ry)
         self.rz = self.unwrap_angle(rz, self.p_rz)
 
-        from api import (
-            to_present_2d,
-            to_update_2d,
-            distance_point_to_plane
-        )
-
-        from config import (
-            PLANE_POINTS,
-            TOUCH_THRESHOLD
-        )
-
         distance = distance_point_to_plane(
-            np.array([tx, ty, tz]),
-            PLANE_POINTS
+            PVector(tx, ty, tz),
+            planePoints
         )
 
-        if distance < TOUCH_THRESHOLD:
+        now = int(time.time() * 1000)
 
-            if not self.active:
+        if distance < touchThreshold:
 
-                to_present_2d(
-                    self.get_to_id(),
-                    tx,
-                    ty,
-                    tz,
-                    self.rz
+            try:
+                from api import (
+                    to_present_2d,
+                    to_update_2d
                 )
 
-            else:
+                if not self.active:
 
-                to_update_2d(
-                    self.get_to_id(),
-                    tx,
-                    ty,
-                    tz,
-                    self.rz
-                )
+                    to_present_2d(
+                        self.get_to_id(),
+                        self.tx,
+                        self.ty,
+                        self.tz,
+                        self.rz
+                    )
+
+                else:
+
+                    to_update_2d(
+                        self.get_to_id(),
+                        self.tx,
+                        self.ty,
+                        self.tz,
+                        self.rz
+                    )
+
+            except Exception:
+                pass
 
             self.active = True
-            self.timestamp = time.time() * 1000
+            self.ts = now
 
         else:
 
-            self.set_inactive()
+            if self.active and (now - self.ts) > self.TTL:
+
+                self.active = False
+
+                try:
+                    from api import to_absent_2d
+
+                    to_absent_2d(
+                        self.get_to_id(),
+                        self.tx,
+                        self.ty,
+                        self.tz,
+                        self.rz
+                    )
+                except Exception:
+                    pass
+
+        # Processing-аналог p_rx/p_ry/p_rz
+        self.p_rx = self.rx
+        self.p_ry = self.ry
+        self.p_rz = self.rz
+
+    # --------------------------------------------------
+    # Processing: getScreenLoc2D()
+    # --------------------------------------------------
+
+    def get_screen_loc_2d(
+        self,
+        homography
+    ):
+
+        point = transform_point(
+            PVector(
+                self.tx,
+                self.ty,
+                self.tz
+            ),
+            homography
+        )
+
+        return img2screen(point)
+
+    # --------------------------------------------------
+    # Processing: getOffsetFromID()
+    # --------------------------------------------------
 
     def get_offset_from_id(
         self,
         target_id
     ):
 
-        for i, tag_id in enumerate(self.ids):
+        index = -1
 
-            if tag_id == target_id:
-                return self.offsets[i]
+        for i, marker_id in enumerate(self.ids):
 
-        return np.zeros(3)
+            if marker_id == target_id:
+                index = i
+                break
+
+        if index >= 0:
+            return self.offs[index]
+
+        return PVector(0, 0, 0)
+        
+        

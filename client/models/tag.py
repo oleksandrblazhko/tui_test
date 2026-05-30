@@ -1,20 +1,19 @@
-import time
 from dataclasses import dataclass, field
-from typing import List, Optional
+import time
 
-import numpy as np
+from tools import PVector
 
 
 @dataclass
 class Tag:
 
-    tag_id: int
+    id: int
 
-    ttl: int = 200
+    TTL: int = 200
 
     active: bool = False
 
-    timestamp: float = 0.0
+    ts: int = 0
 
     tx: float = 0.0
     ty: float = 0.0
@@ -24,20 +23,32 @@ class Tag:
     ry: float = 0.0
     rz: float = 0.0
 
-    corners: Optional[List[np.ndarray]] = field(default_factory=list)
+    corners: list = field(
+        default_factory=lambda: [
+            PVector(),
+            PVector(),
+            PVector(),
+            PVector()
+        ]
+    )
+
+    def millis(self):
+        return int(time.time() * 1000)
 
     def check_active(self):
 
-        now = time.time() * 1000
-
-        if self.active and (now - self.timestamp) > self.ttl:
+        if (
+            self.active
+            and
+            (self.millis() - self.ts) > self.TTL
+        ):
 
             self.active = False
 
             from api import tag_absent_3d
 
             tag_absent_3d(
-                self.tag_id,
+                self.id,
                 self.tx,
                 self.ty,
                 self.tz,
@@ -57,7 +68,7 @@ class Tag:
         corners
     ):
 
-        self.timestamp = time.time() * 1000
+        self.ts = self.millis()
 
         self.tx = tx
         self.ty = ty
@@ -77,26 +88,31 @@ class Tag:
         if not self.active:
 
             tag_present_3d(
-                self.tag_id,
-                tx,
-                ty,
-                tz,
-                rx,
-                ry,
-                rz
+                self.id,
+                self.tx,
+                self.ty,
+                self.tz,
+                self.rx,
+                self.ry,
+                self.rz
             )
 
         else:
 
             tag_update_3d(
-                self.tag_id,
-                tx,
-                ty,
-                tz,
-                rx,
-                ry,
-                rz
+                self.id,
+                self.tx,
+                self.ty,
+                self.tz,
+                self.rx,
+                self.ry,
+                self.rz
             )
 
         self.active = True
-		
+
+    # Processing aliases
+
+    checkActive = check_active
+    
+    
