@@ -93,57 +93,11 @@ def init_data_objects():
     global DOlist
 
     DOlist.clear()
-
     dataObjSize = 200
-
-    DOlist.append(
-        DataObject(
-            0,
-            False,
-            10,
-            WINDOW_WIDTH/2-dataObjSize,
-            WINDOW_HEIGHT/2-dataObjSize,
-            dataObjSize,
-            "Obj. 1"
-        )
-    )
-
-    DOlist.append(
-        DataObject(
-            1,
-            False,
-            10,
-            WINDOW_WIDTH/2+dataObjSize,
-            WINDOW_HEIGHT/2-dataObjSize,
-            dataObjSize,
-            "Obj. 2"
-        )
-    )
-
-    DOlist.append(
-        DataObject(
-            2,
-            False,
-            10,
-            WINDOW_WIDTH/2-dataObjSize,
-            WINDOW_HEIGHT/2+dataObjSize,
-            dataObjSize,
-            "Obj. 3"
-        )
-    )
-
-    DOlist.append(
-        DataObject(
-            3,
-            False,
-            10,
-            WINDOW_WIDTH/2+dataObjSize,
-            WINDOW_HEIGHT/2+dataObjSize,
-            dataObjSize,
-            "Obj. 4"
-        )
-    )
-
+    DOlist.append(DataObject(0,False,10,WINDOW_WIDTH/2-dataObjSize,WINDOW_HEIGHT/2-dataObjSize,dataObjSize,"Obj. 1" ))
+    DOlist.append(DataObject(1,False,10,WINDOW_WIDTH/2+dataObjSize,WINDOW_HEIGHT/2-dataObjSize,dataObjSize,"Obj. 2" ))
+    DOlist.append(DataObject(2,False,10,WINDOW_WIDTH/2-dataObjSize,WINDOW_HEIGHT/2+dataObjSize,dataObjSize,"Obj. 3" ))
+    DOlist.append(DataObject(3,False,10,WINDOW_WIDTH/2+dataObjSize,WINDOW_HEIGHT/2+dataObjSize,dataObjSize,"Obj. 4" ))
 
 # ============================================================
 # SETUP
@@ -156,34 +110,13 @@ def setup():
     global tm
 
     pygame.init()
-
-    screen = pygame.display.set_mode(
-        (WINDOW_WIDTH, WINDOW_HEIGHT)
-    )
-
-    pygame.display.set_caption(
-        "ArUco-TUI Python"
-    )
-
+    screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption("ArUco-TUI Python")
     clock = pygame.time.Clock()
-
-    tm = TagManager(
-        600,
-        TO_IDS,
-        TO_OFFSETS
-    )
-
+    tm = TagManager(600,TO_IDS,TO_OFFSETS)
     init_data_objects()
-
-    initialize_api(
-        tm,
-        DOlist
-    )
-
-    tools.load_calibration_file(
-        "corners.txt"
-    )
-
+    initialize_api(tm,DOlist)
+    tools.load_calibration_file("corners.txt")
 
 # ============================================================
 # UPDATE OBJECTS
